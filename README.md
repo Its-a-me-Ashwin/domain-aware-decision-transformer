@@ -1,2 +1,2 @@
-# environment-manipulator-transformer
+# Environment Manipulator Transformer
 Master Thesis
