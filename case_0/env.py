@@ -6,6 +6,8 @@ import pybullet_data
 import time
 import random
 
+from math import pi
+
 class DoubleInvertedPendulumBalanceEnv(gym.Env):
     """
     A Gym-like environment for balancing a double inverted pendulum on a cart using PyBullet.
@@ -16,9 +18,9 @@ class DoubleInvertedPendulumBalanceEnv(gym.Env):
                  urdf_path="./invertedPendulum.urdf",
                  use_gui=False,
                  time_step=1./240.,
-                 max_force=1000.0,
-                 random_offset=0.05,
-                 max_episode_steps=5000):
+                 max_force=50.0,
+                 random_offset=0.1,
+                 max_episode_steps=10000):
         """
         Args:
             urdf_path (str): Path to the URDF file.
@@ -80,8 +82,8 @@ class DoubleInvertedPendulumBalanceEnv(gym.Env):
         # ---------------------------
         # Action: 1D (force on the prismatic joint), range [-max_force, max_force]
         self.action_space = spaces.Box(
-            low=np.array([-self.max_force], dtype=np.float32),
-            high=np.array([self.max_force], dtype=np.float32),
+            low=np.array([-1], dtype=np.float32),
+            high=np.array([1], dtype=np.float32),
             shape=(1,),
             dtype=np.float32
         )
@@ -121,7 +123,7 @@ class DoubleInvertedPendulumBalanceEnv(gym.Env):
             )
 
         # Slight random offsets in pendulum angles (joint 1 & 2)
-        offset1 = random.uniform(-self.random_offset, self.random_offset) + 3.14
+        offset1 = random.uniform(-self.random_offset, self.random_offset) + pi
         offset2 = random.uniform(-self.random_offset, self.random_offset)
 
         # Joint 0: prismatic (cart), Joint 1: pend1, Joint 2: pend2
@@ -140,9 +142,9 @@ class DoubleInvertedPendulumBalanceEnv(gym.Env):
     def step(self, action):
         """Take an action, step the simulation, and return (obs, reward, done, info)."""
         self.current_step += 1
-
+        action = action[0] * self.max_force
         # Clip the force to the valid range
-        force = np.clip(action[0], -self.max_force, self.max_force)
+        force = np.clip(action, -self.max_force, self.max_force)
 
         # Apply force to prismatic joint (joint 0)
         p.setJointMotorControl2(
@@ -163,7 +165,8 @@ class DoubleInvertedPendulumBalanceEnv(gym.Env):
         cart_x = obs[0]
         p1_theta = obs[3]
         p2_theta = obs[6]
-
+        p1_theta_dot = obs[4]
+        p2_theta_dot = obs[7]
         # ---------------------------
         # Reward Function
         # ---------------------------
@@ -171,12 +174,10 @@ class DoubleInvertedPendulumBalanceEnv(gym.Env):
         # Also encourage cart_x ~ 0.
         # We'll penalize squared angles & squared cart position.
         # Optionally, we can penalize large forces to encourage minimal control.
-        angle_penalty = 10*((p1_theta-3.14)**2 + p2_theta**2)
+        angle_penalty = 1.5*((p1_theta-pi)**2 + (p2_theta*2)**2)
+        velocity_penalty = 1.5 * ((p1_theta_dot**2) + (p2_theta_dot**2))
         cart_penalty = 0.5*(cart_x**2)
         force_penalty = 0.0001*(force**2)
-
-        # Reward is negative sum of penalties, so the agent tries to minimize them.
-        reward = - (angle_penalty + 0.1 * cart_penalty + force_penalty)
 
         # ---------------------------
         # Done Condition
@@ -186,14 +187,19 @@ class DoubleInvertedPendulumBalanceEnv(gym.Env):
         done = False
         if abs(cart_x) > 2.0:
             done = True
-        if abs(p1_theta-3.14) > 3.14/2 or abs(p2_theta) > 3.14:
+        if abs(p1_theta-pi) > pi/2 or abs(p2_theta) > pi:
             done = True
         if self.current_step >= self.max_episode_steps:
             done = True
 
+        # Reward is negative sum of penalties, so the agent tries to minimize them.
+        reward = - (angle_penalty + 0.1 * cart_penalty + force_penalty)
+        if done:
+            reward -= 100000
+
         info = {}
 
-        return obs, reward, done, False, info
+        return obs, reward, False, False, info
 
     def _get_observation(self):
         """
@@ -240,14 +246,13 @@ class DoubleInvertedPendulumBalanceEnv(gym.Env):
         p.disconnect(physicsClientId=self.client_id)
 
 if __name__ == "__main__":
-    env = DoubleInvertedPendulumBalanceEnv(use_gui=True)
+    env = DoubleInvertedPendulumBalanceEnv(use_gui=True, random_offset=0.1)
     obs, _ = env.reset()
     for _ in range(10000):
-        action = [np.random.uniform(-1000, 1000)]
+        action = [np.random.uniform(-1, 1)]
         obs, reward, done, _, info = env.step(action)
         if done:
             obs, _ = env.reset()
         print("Obs:", obs[3], obs[6], "Reward:", reward)
         time.sleep(1./240.)
-        #time.sleep(.1)
     env.close()
