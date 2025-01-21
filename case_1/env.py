@@ -20,6 +20,7 @@ class InvertedPendulumBalanceEnv(gym.Env):
                  time_step=1./240.,
                  max_force=50.0,
                  random_offset=0.1,
+                 random_cart_offset=0.1,
                  max_episode_steps=10_000):
         """
         Args:
@@ -37,6 +38,7 @@ class InvertedPendulumBalanceEnv(gym.Env):
         self.time_step = time_step
         self.max_force = max_force
         self.random_offset = random_offset
+        self.random_cart_offset = random_cart_offset
         self.max_episode_steps = max_episode_steps
         self.current_step = 0
 
@@ -124,9 +126,10 @@ class InvertedPendulumBalanceEnv(gym.Env):
 
         # Slight random offsets in pendulum angles (joint 1 & 2)
         offset1 = random.uniform(-self.random_offset, self.random_offset) + pi
+        offset2 = random.uniform(-self.random_cart_offset, self.random_cart_offset)
 
         # Joint 0: prismatic (cart), Joint 1: pend1, Joint 2: pend2
-        p.resetJointState(self.box_id, 0, 0.0, 0.0, physicsClientId=self.client_id)
+        p.resetJointState(self.box_id, 0, offset2, 0.0, physicsClientId=self.client_id)
         p.resetJointState(self.box_id, 1, offset1, 0.0, physicsClientId=self.client_id)
 
         # Reset velocity cache
@@ -170,11 +173,13 @@ class InvertedPendulumBalanceEnv(gym.Env):
         # Also encourage cart_x ~ 0.
         # We'll penalize squared angles & squared cart position.
         # Optionally, we can penalize large forces to encourage minimal control.
-        angle_penalty = 1.5*(p1_theta-pi)**2
-        velocity_penalty = 1.5 * ((p1_theta_dot**2))
+        angle_penalty = 5*(p1_theta-pi)**2
+        velocity_penalty = 0.5 * ((p1_theta_dot**2))
         cart_penalty = 0.5*(cart_x**2)
-        force_penalty = 0.0001*(force**2)
-        angle_upright_bonus = 10 if abs(p1_theta-pi) < 0.2 else 0
+        force_penalty = 0.1*(force**2)
+
+        angle_upright_bonus = 100 if abs(p1_theta-pi) < 0.2 else 0
+        cart_bonus = 1 if abs(cart_x) < 1 else 0 
         # ---------------------------
         # Done Condition
         # ---------------------------
@@ -183,7 +188,7 @@ class InvertedPendulumBalanceEnv(gym.Env):
         done = self.current_step >= self.max_episode_steps
 
         # Reward is negative sum of penalties, so the agent tries to minimize them.
-        reward = - (angle_penalty + 0.1 * cart_penalty + force_penalty) + angle_upright_bonus
+        reward = - (angle_penalty + velocity_penalty + cart_penalty + force_penalty) + angle_upright_bonus + cart_bonus
         if abs(cart_x) > 10.0:
             reward -= 1000
         if abs(p1_theta-pi) > pi/2:
@@ -236,7 +241,7 @@ class InvertedPendulumBalanceEnv(gym.Env):
         p.disconnect(physicsClientId=self.client_id)
 
 if __name__ == "__main__":
-    env = InvertedPendulumBalanceEnv(use_gui=True, random_offset=0.1)
+    env = InvertedPendulumBalanceEnv(use_gui=True, random_offset=0.1, random_cart_offset=2)
     obs, _ = env.reset()
     for _ in range(10000):
         action = [np.random.uniform(-1, 1)]
