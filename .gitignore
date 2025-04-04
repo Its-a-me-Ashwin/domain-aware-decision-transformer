@@ -169,3 +169,16 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# Ignore all __pycache__ directories
+__pycache__/
+**/__pycache__/
+
+# Ignore all contents inside any 'dataset' or 'datasets' directory at any depth
+dataset/
+datasets/
+**/dataset/
+**/datasets/
+**/dataset/**
+**/datasets/**
