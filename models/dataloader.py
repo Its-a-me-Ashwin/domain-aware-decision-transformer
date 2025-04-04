@@ -42,10 +42,15 @@ class RLDataLoader(Dataset):
             # Load the .pt file
             loaded_data = torch.load(dataset_pt)
             # Expecting keys: 'action', 'state', 'done', 'reward', 'config'
-            actions = loaded_data["action"]
-            states = loaded_data["state"]
-            dones = loaded_data["done"]
-            rewards = loaded_data["reward"]
+            ## Due to bad code it can be action or actions
+            actionKey = "actions" if "actions" in loaded_data else "action"
+            stateKey = "states" if "states" in loaded_data else "state"
+            doneKey = "dones" if "dones" in loaded_data else "done"
+            rewardKey = "rewards" if "rewards" in loaded_data else "reward"
+            actions = loaded_data[actionKey]
+            states = loaded_data[stateKey]
+            dones = loaded_data[doneKey]
+            rewards = loaded_data[rewardKey]
             configs = loaded_data["config"]  # repeated for each data point
 
             # Concatenate these data with the global lists
@@ -73,17 +78,6 @@ class RLDataLoader(Dataset):
         self.all_configs = torch.cat(self.all_configs, dim=0)
 
         print("Dataset", self.all_actions.dtype)
-
-        #print("In loader", self.all_actions.size(), self.all_states.size(), self.all_rewards.size())
-        # Optionally, you could randomize the order right here, but typically
-        # you'd pass `shuffle=True` to the DataLoader in your training script.
-        # If you want to shuffle in-memory right now, you can do:
-        # permutation = torch.randperm(self.all_actions.size(0))
-        # self.all_actions = self.all_actions[permutation]
-        # self.all_states = self.all_states[permutation]
-        # self.all_dones = self.all_dones[permutation]
-        # self.all_rewards = self.all_rewards[permutation]
-        # self.all_configs = self.all_configs[permutation]
 
     def __len__(self):
         return self.all_actions.shape[0]

@@ -192,8 +192,8 @@ class EMT(AbstractModel):
             dim=2
         ).reshape(batch_size, 4 * seq_length)
 
-        print("stacked_inputs size:", stacked_inputs.size())
-        print("attension mask size:", stacked_attention_mask.size(), stacked_attention_mask.min(), stacked_attention_mask.max(), stacked_attention_mask)
+        # print("stacked_inputs size:", stacked_inputs.size())
+        # print("attension mask size:", stacked_attention_mask.size(), stacked_attention_mask.min(), stacked_attention_mask.max(), stacked_attention_mask)
 
         # 5) Pass through the GPT2 transformer
         transformer_outputs = self.transformer(
