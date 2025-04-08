@@ -81,22 +81,16 @@ class EMT(AbstractModel):
 
         # Output heads for states
         if state_tanh:
-            # Continuous => Tanh
-            self.predict_state = nn.Sequential(
-                nn.Linear(hidden_size, state_dim),
-                nn.Tanh()
-            )
+            # Continuous => No Tanh (direct regression)
+            self.predict_state = nn.Linear(hidden_size, state_dim)
         else:
             # Categorical => raw logits
             self.predict_state = nn.Linear(hidden_size, state_dim)
 
         # Output heads for actions
         if action_tanh:
-            # Continuous => Tanh
-            self.predict_action = nn.Sequential(
-                nn.Linear(hidden_size, act_dim),
-                nn.Tanh()
-            )
+            # Continuous => No Tanh (direct regression)
+            self.predict_action = nn.Linear(hidden_size, act_dim)
         else:
             # Categorical => raw logits
             self.predict_action = nn.Linear(hidden_size, act_dim)
@@ -187,18 +181,17 @@ class EMT(AbstractModel):
         stacked_inputs = self.embed_ln(stacked_inputs)
 
         # 4) Construct an attention mask in the same shape => [B, 4T]
-        stacked_attention_mask = torch.stack(
-            (attention_mask, attention_mask, attention_mask, attention_mask), 
-            dim=2
-        ).reshape(batch_size, 4 * seq_length)
-
-        # print("stacked_inputs size:", stacked_inputs.size())
-        # print("attension mask size:", stacked_attention_mask.size(), stacked_attention_mask.min(), stacked_attention_mask.max(), stacked_attention_mask)
+        stacked_attention_mask = attention_mask.unsqueeze(1)              # [B, 1, T]
+        stacked_attention_mask = stacked_attention_mask.expand(-1, 4, -1) # [B, 4, T]
+        stacked_attention_mask = stacked_attention_mask.reshape(batch_size, 4 * seq_length)  # [B, 4*T]
+        
+        # print("Sizes of the stuff", stacked_inputs.size(), stacked_attention_mask.size())
 
         # 5) Pass through the GPT2 transformer
         transformer_outputs = self.transformer(
             inputs_embeds=stacked_inputs,
-            attention_mask=stacked_attention_mask
+            attention_mask=stacked_attention_mask,
+            use_cache=False
         )
         x = transformer_outputs['last_hidden_state']  # [B, 4T, H]
 

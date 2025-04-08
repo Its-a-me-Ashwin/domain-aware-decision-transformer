@@ -1,92 +1,137 @@
 import os
-import numpy as np
+import json
 import torch
+import numpy as np
 from torch.utils.data import Dataset
 
-class RLDataLoader(Dataset):
-    """
-    PyTorch Dataset that loads all data from each domain subdirectory
-    in ./dataset. Each subdirectory should contain:
-        - dataset.pt  (the dictionary with 'action', 'state', 'done', 'reward', 'config')
-        - config.json (the environment parameters)
-    This loader concatenates all data points from all subdirectories 
-    and makes them available for training (optionally with shuffle in a DataLoader).
-    """
 
-    def __init__(self, dataset_root="./dataset", action_cat=False, states_cat=False):
+class RLDataLoader(Dataset):
+    def __init__(self, dataset_root, action_cat=False, state_cat=False, max_seq_len=None, percentage=1.0):
         super().__init__()
         self.dataset_root = dataset_root
-        self.all_actions = []
-        self.all_states = []
-        self.all_dones = []
-        self.all_rewards = []
-        self.all_configs = []
-
         self.action_cat = action_cat
-        self.state_cat = states_cat
-        # Iterate over all subdirectories in dataset_root
-        if not os.path.exists(self.dataset_root):
-            raise FileNotFoundError(f"Dataset root '{self.dataset_root}' does not exist.")
+        self.state_cat = state_cat
+        self.max_seq_len = max_seq_len
+        self.percentage = percentage
 
-        for subdir in os.listdir(self.dataset_root):
-            config_dir = os.path.join(self.dataset_root, subdir)
-            if not os.path.isdir(config_dir):
-                # Skip files that are not directories
+        self.normalized_episodes = []
+
+        # Temporary storage to collect for normalization
+        all_states = []
+        all_actions = []
+        all_rewards = []
+        all_raw_episodes = []
+
+        if not os.path.exists(dataset_root):
+            raise FileNotFoundError(f"Dataset root '{dataset_root}' does not exist.")
+
+        for subdir in os.listdir(dataset_root):
+            subdir_path = os.path.join(dataset_root, subdir)
+            if not os.path.isdir(subdir_path):
                 continue
 
-            dataset_pt = os.path.join(config_dir, "dataset.pt")
-            if not os.path.isfile(dataset_pt):
-                # Skip directories that do not contain dataset.pt
+            dataset_file = os.path.join(subdir_path, "dataset.pt")
+            config_file = os.path.join(subdir_path, "config.json")
+
+            if not os.path.exists(dataset_file):
+                print(f"Skipping {subdir} (missing dataset.pt)")
                 continue
 
-            # Load the .pt file
-            loaded_data = torch.load(dataset_pt)
-            # Expecting keys: 'action', 'state', 'done', 'reward', 'config'
-            ## Due to bad code it can be action or actions
-            actionKey = "actions" if "actions" in loaded_data else "action"
-            stateKey = "states" if "states" in loaded_data else "state"
-            doneKey = "dones" if "dones" in loaded_data else "done"
-            rewardKey = "rewards" if "rewards" in loaded_data else "reward"
-            actions = loaded_data[actionKey]
-            states = loaded_data[stateKey]
-            dones = loaded_data[doneKey]
-            rewards = loaded_data[rewardKey]
-            configs = loaded_data["config"]  # repeated for each data point
+            if not os.path.exists(config_file):
+                raise FileNotFoundError(f"Missing config.json in '{subdir_path}'")
 
-            # Concatenate these data with the global lists
-            if self.action_cat:
-                self.all_actions.append(actions.to(torch.int16))  # Convert actions to int16
-            else:
-                self.all_states.append(states)
+            with open(config_file, "r") as cf:
+                config_dict = json.load(cf)
 
-            if self.state_cat:
-                self.all_states.append(states.to(torch.int16))  # Convert states to int16
-            else:
-                self.all_states.append(states)
-            self.all_dones.append(dones)
-            self.all_rewards.append(rewards)
-            self.all_configs.append(configs)
+            config_array = np.array(list(config_dict.values()), dtype=np.float32)
+            config_tensor = torch.from_numpy(config_array)
 
-        # Stack everything into big tensors
-        if len(self.all_actions) == 0:
-            raise ValueError("No data found in any subdirectory under dataset_root.")
+            episodes = torch.load(dataset_file)
 
-        self.all_actions = torch.cat(self.all_actions, dim=0)
-        self.all_states = torch.cat(self.all_states, dim=0)
-        self.all_dones = torch.cat(self.all_dones, dim=0)
-        self.all_rewards = torch.cat(self.all_rewards, dim=0)
-        self.all_configs = torch.cat(self.all_configs, dim=0)
+            for ep in episodes:
+                states = ep["states"].clone().detach().float()
+                actions = ep["actions"].clone().detach().float()
+                rewards = ep["rewards"].clone().detach().float()
+                dones = ep["dones"].clone().detach().bool()
 
-        print("Dataset", self.all_actions.dtype)
+                if self.state_cat:
+                    states = states.to(torch.int16)
+                if self.action_cat:
+                    actions = actions.to(torch.int16)
+
+                all_raw_episodes.append({
+                    "states": states,
+                    "actions": actions,
+                    "rewards": rewards,
+                    "dones": dones,
+                    "config": config_tensor
+                })
+
+                all_states.append(states)
+                all_actions.append(actions)
+                all_rewards.append(rewards)
+
+        # Shuffle and apply percentage filtering
+        total_eps = len(all_raw_episodes)
+        np.random.shuffle(all_raw_episodes)
+        selected_eps = int(total_eps * self.percentage)
+        all_raw_episodes = all_raw_episodes[:selected_eps]
+
+        # Global normalization
+        all_states_tensor = torch.cat(all_states, dim=0)
+        all_actions_tensor = torch.cat(all_actions, dim=0)
+        all_rewards_tensor = torch.cat(all_rewards, dim=0)
+
+        self.state_mean = all_states_tensor.mean(0, keepdim=True)
+        self.state_std = all_states_tensor.std(0, keepdim=True) + 1e-6
+        self.action_mean = all_actions_tensor.mean(0, keepdim=True)
+        self.action_std = all_actions_tensor.std(0, keepdim=True) + 1e-6
+        self.reward_mean = all_rewards_tensor.mean()
+        self.reward_std = all_rewards_tensor.std() + 1e-6
+
+        # Normalize and construct final episodes
+        for ep in all_raw_episodes:
+            states = (ep["states"] - self.state_mean) / self.state_std
+            actions = (ep["actions"] - self.action_mean) / self.action_std
+            rewards = (ep["rewards"] - self.reward_mean) / self.reward_std
+            dones = ep["dones"]
+
+            T = states.shape[0]
+            config = ep["config"].unsqueeze(0).repeat(T, 1)
+
+            if self.max_seq_len is not None:
+                states = states[:self.max_seq_len]
+                actions = actions[:self.max_seq_len]
+                rewards = rewards[:self.max_seq_len]
+                dones = dones[:self.max_seq_len]
+                config = config[:self.max_seq_len]
+
+            timesteps = torch.arange(states.shape[0], dtype=torch.long)
+
+            self.normalized_episodes.append({
+                "states": states,
+                "actions": actions,
+                "rewards": rewards,
+                "dones": dones,
+                "config": config,
+                "timesteps": timesteps
+            })
+
+        print(f"Loaded {len(self.normalized_episodes)} / {total_eps} episodes ({self.percentage * 100:.1f}%) from '{dataset_root}'")
+        print(f"State mean/std: {self.state_mean.shape}, {self.state_std.shape}")
+        print(f"Action mean/std: {self.action_mean.shape}, {self.action_std.shape}")
 
     def __len__(self):
-        return self.all_actions.shape[0]
+        return len(self.normalized_episodes)
 
     def __getitem__(self, idx):
-        return {
-            "action": self.all_actions[idx],
-            "state": self.all_states[idx],
-            "done": self.all_dones[idx],
-            "reward": self.all_rewards[idx],
-            "config": self.all_configs[idx],
-        }
+        return self.normalized_episodes[idx]
+
+    def unnormalize_state(self, norm_state):
+        return norm_state * self.state_std + self.state_mean
+
+    def unnormalize_action(self, norm_action):
+        return norm_action * self.action_std + self.action_mean
+
+    def unnormalize_reward(self, norm_reward):
+        return norm_reward * self.reward_std + self.reward_mean

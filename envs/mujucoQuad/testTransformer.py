@@ -18,16 +18,18 @@ device = "cpu"
 
 if __name__ == "__main__":
     model = EMT(
-        state_dim=2,  # e.g. dimension of state vectors
-        act_dim=1,     # e.g. dimension of action vectors
-        config_dim=4,  # e.g. dimension of config vectors
-        hidden_size=600,  # must be multiple of 12 for typical transformer implementations
-        n_ctx=1_000,     # context size if your model is built for sequence data
-        action_tanh=False, # Forces the use of soft max activation for descreate actions
-        state_tanh=False
+        state_dim=465,  # e.g. dimension of state vectors in this case it is discreate so we use one hot encoding
+        act_dim=12,     # e.g. dimension of action vectors same as above
+        config_dim=7,  # e.g. dimension of config vectors
+        hidden_size=1500,  # must be multiple of 12 for typical transformer implementations
+        n_ctx=ctx_size,     # context size if your model is built for sequence data
+        n_positions=ctx_size, 
+        max_ep_len = ctx_size//4,
+        action_tanh=True, # Forces the use of soft max activation for descreate actions
+        state_tanh=True
     )
 
-    model.load_state_dict(torch.load("./emt_model.pth", map_location=device))
+    model.load_state_dict(torch.load("./emt_model_epoch_15.pth", map_location=device))
 
     config = GridWorldConfig(action_inverter=False, slip_factor=0.0, wormhole_state=-0.9)
     env = GridWorldEnv(config=config, gui=True)

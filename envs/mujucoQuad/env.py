@@ -44,25 +44,43 @@ from tqdm import tqdm
 import mediapy as media
 
 
-def plot_training_metrics(logs_dict, save_path=None):
-    plt.figure(figsize=(12, 7))
+def plot_training_metrics_separately(logs_dict, save_path=None):
     print(logs_dict)
     for label, log in logs_dict.items():
         if not log:
-            print("Skipping data")
+            print(f"Skipping data for {label} – it’s empty.")
             continue
-        steps, values = zip(*log)
-        plt.plot(steps, values, label=label)
 
-    plt.xlabel("Training Steps")
-    plt.title("Training Metrics Over Time")
-    plt.grid(True)
-    plt.legend()
-    
-    if save_path:
-        plt.savefig(save_path)
-        print(f"[✓] Saved training plot to {save_path}")
-    plt.show()
+        # Prepare the data
+        steps, values = zip(*log)
+
+        # Create a new figure for each metric
+        plt.figure()
+        plt.plot(steps, values, marker="o", label=label)
+
+        # Annotate each data point with its y-value
+        for step, val in zip(steps, values):
+            plt.annotate(
+                f"{val:.2f}",                # Format to 2 decimal places
+                xy=(step, val),             # The point to label
+                xytext=(5, 5),             # Offset text slightly from the point
+                textcoords="offset points"  # Interpret xytext as offset from xy
+            )
+
+        plt.xlabel("Training Steps")
+        plt.ylabel(label)
+        plt.title(f"Training Metric: {label}")
+        plt.grid(True)
+        plt.legend()
+
+        # Optionally save each figure
+        if save_path:
+            # e.g., save the figure as "<save_path>_loss.png", "<save_path>_reward.png"
+            metric_save_path = f"{save_path}_{label}.png"
+            plt.savefig(metric_save_path)
+            print(f"[✓] Saved training plot for '{label}' to {metric_save_path}")
+
+        plt.show()
 
 # -------------------------------------------------------------------
 # 1. Domain Randomization Class
@@ -537,9 +555,9 @@ def train_and_collect_data(
 
 
     train_fn = functools.partial(
-        ppo_train,
-        num_timesteps=num_train_steps,
-        num_evals=1,
+        ppo_train, ## Best among brax PPO implementations
+        num_timesteps=num_train_steps, ## Total time steps for training
+        num_evals=10, ## Logging frequency and evaluation frequency
         reward_scaling=1,
         episode_length=max_episode_steps,
         normalize_observations=True,
@@ -547,7 +565,7 @@ def train_and_collect_data(
         unroll_length=20,
         num_minibatches=32,
         num_updates_per_batch=4,
-        discounting=0.97,
+        discounting=0.98, ## Seems to give the best results
         learning_rate=3.0e-4,
         entropy_cost=1e-2,
         num_envs=1024,
@@ -686,16 +704,9 @@ def train_and_collect_data(
 # Example usage if run as a script:
 # -------------------------------------------------------------------
 if __name__ == "__main__":
-    """
-    If you run this script directly, it will train once and collect data. 
-    You can also import these classes/functions in your own code.
-    """
-    # We clone the menagerie with:
-    #    !git clone https://github.com/google-deepmind/mujoco_menagerie
-    # Or have it in the path. Then run:
     print("Running a single train_and_collect_data call ...")
 
-    for i in range(10):
+    for i in range(20):
         # Quick test call:
         # Adjust num_train_steps, etc. as desired.
         episodes = train_and_collect_data(

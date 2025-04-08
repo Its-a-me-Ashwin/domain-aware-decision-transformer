@@ -32,7 +32,7 @@ if __name__ == "__main__":
     # 2) Load Dataset & Create DataLoader
     # -----------------------------
     # RLDataLoader is a Dataset that concatenates data from ./dataset subdirectories
-    dataset = RLDataLoader(dataset_root="./dataset", action_cat=True, states_cat=True)
+    dataset = RLDataLoader(dataset_root="./dataset", action_cat=True, state_cat=True)
 
     # Now wrap it into a PyTorch DataLoader for batching
     train_data_loader = DataLoader(

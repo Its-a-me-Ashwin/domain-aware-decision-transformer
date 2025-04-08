@@ -37,6 +37,7 @@ class Hyperparameters:
         self.device = device
         self.actionType = actionType
         self.stateType = stateType
+        self.log_interval = 100
 
 
 class Trainer:
@@ -50,6 +51,7 @@ class Trainer:
         self.model = model.to(hyperparams.device)
         self.data_loader = data_loader  # This is a DataLoader, not the RLDataLoader dataset
         self.hyperparams = hyperparams
+        self.global_step = 0
         
         self.loss_fn = nn.MSELoss()
         if self.hyperparams.actionType == "continious":
@@ -80,7 +82,9 @@ class Trainer:
         )
 
         # Mixed Precision (optional)
-        self.scaler = torch.cuda.amp.GradScaler() if "cuda" in hyperparams.device else None
+        # torch.amp.GradScaler('cuda', args...) new
+        # torch.cuda.amp.GradScaler(args...) old
+        self.scaler = torch.amp.GradScaler('cuda') if "cuda" in hyperparams.device else None
         print("Scaler:", self.scaler, file=f)
 
     def train(self):
@@ -104,184 +108,135 @@ class Trainer:
                 # ---------------------------
                 # 1) Prepare your batch
                 # ---------------------------
-                states = batch["state"].to(device)   # [B, state_dim]
-                actions = batch["action"].to(device) # [B] or [B, action_dim]
-                rewards = batch["reward"].to(device) # [B]
-                configs = batch["config"].to(device) # [B, config_dim]
 
-                if actions.dim() == 1:
-                    # Ensure we always have shape [B, action_dim]
-                    actions = actions.unsqueeze(-1)
+                actionKey = "actions" if "actions" in batch else "action"
+                stateKey = "states" if "states" in batch else "state"
+                rewardKey = "rewards" if "rewards" in batch else "reward"
 
-                # Single-step "returns_to_go" = reward
-                returns_to_go = rewards
 
-                # Create timesteps: [B], e.g. range(0..B-1)
-                timesteps = torch.arange(states.shape[0], device=device, dtype=torch.long)
+                states = batch[stateKey].to(device)         # [B, T, state_dim]
+                actions = batch[actionKey].to(device)       # [B, T, action_dim]
+                rewards = batch[rewardKey].to(device)       # [B, T]
+                configs = batch["config"].to(device)        # [B, T, config_dim]
+                timesteps = batch["timesteps"].to(device)   # [B, T]
+                attention_mask = batch["attention_mask"].to(device)  # [B, T]
 
-                # Reshape to seq_len=1
-                states = states.unsqueeze(1)    # [B, 1, state_dim]
-                actions = actions.unsqueeze(1)  # [B, 1, action_dim]
-                configs = configs.unsqueeze(1)  # [B, 1, config_dim]
+                B, T, _ = states.shape
 
-                # Convert to long if discrete (for embedding + CE)
-                if self.hyperparams.stateType != "continious":
-                    states = states.to(torch.long)
-                if self.hyperparams.actionType != "continious":
-                    actions = actions.to(torch.long)
+                # Compute returns-to-go (you can change this to discounted return if needed)
+                returns_to_go = rewards.clone().unsqueeze(-1)  # [B, T, 1]
 
-                # [B, 1, 1] for returns_to_go
-                returns_to_go = returns_to_go.unsqueeze(1).unsqueeze(-1)
-                # [B, 1] for timesteps
-                timesteps = timesteps.unsqueeze(1)
-
-                # Clear gradients
                 self.optimizer.zero_grad()
 
-                if self.scaler is not None:
-                    # ---------------------------
-                    # 2) Mixed precision forward pass
-                    # ---------------------------
-                    with torch.cuda.amp.autocast():
+                total_act_loss = 0.0
+                total_state_loss = 0.0
+                total_reward_loss = 0.0
+                total_loss = 0.0
+
+
+                for t in range(1, T):
+                    # Inputs: everything before t
+                    input_states = states[:, :t]            # [B, t, state_dim]
+                    input_actions = actions[:, :t]          # [B, t, action_dim]
+                    input_returns = returns_to_go[:, :t]    # [B, t, 1]
+                    input_config = configs[:, :t]           # [B, t, config_dim]
+                    input_timesteps = timesteps[:, :t]      # [B, t]
+
+                    input_attention_mask = attention_mask[:, :t]                    # [B, t]
+                    # input_attention_mask = input_attention_mask.unsqueeze(1)       # [B, 1, t]
+                    # input_attention_mask = input_attention_mask.expand(-1, 4, -1)   # [B, 4, t]
+                    # input_attention_mask = input_attention_mask.reshape(B, 4 * t)   # [B, 4*t]
+
+                    target_state = states[:, t]             # [B, state_dim]
+                    target_action = actions[:, t]           # [B, action_dim]
+                    target_return = returns_to_go[:, t]     # [B, 1]
+
+                    with torch.amp.autocast(device_type='cuda') if self.scaler else torch.no_grad():
                         state_preds, action_preds, return_preds = self.model(
-                            states,
-                            actions,
+                            input_states,
+                            input_actions,
                             rewards=None,
-                            returns_to_go=returns_to_go,
-                            timesteps=timesteps,
-                            config=configs
+                            returns_to_go=input_returns,
+                            timesteps=input_timesteps,
+                            config=input_config,
+                            attention_mask=input_attention_mask
                         )
 
-                        # ---------------------------
-                        # 3) Compute partial losses
-                        # ---------------------------
-                        # Action Loss (CE or MSE)
+
+                        pred_state = state_preds[:, -1]     # Only last timestep
+                        pred_action = action_preds[:, -1]
+                        pred_return = return_preds[:, -1]
+
                         if self.hyperparams.actionType != "continious":
-                            # Cross Entropy: convert [B, 1, act_dim] from one-hot → class idx
-                            actions_idx = actions.argmax(dim=-1)  # [B,1]
-                            act_loss = self.loss_act_fn(
-                                action_preds.view(-1, self.model.act_dim),  # [B*1, act_dim]
-                                actions_idx.view(-1)                       # [B*1]
-                            )
+                            target_action_idx = target_action.argmax(dim=-1)
+                            act_loss = self.loss_act_fn(pred_action.view(B, -1), target_action_idx)
                         else:
-                            act_loss = self.loss_act_fn(action_preds, actions.float())
+                            act_loss = self.loss_act_fn(pred_action, target_action)
 
-                        # State Loss (CE or MSE)
                         if self.hyperparams.stateType != "continious":
-                            states_idx = states.argmax(dim=-1)
-                            state_loss = self.loss_act_fn(
-                                state_preds.view(-1, self.model.state_dim),
-                                states_idx.view(-1)
-                            )
+                            target_state_idx = target_state.argmax(dim=-1)
+                            state_loss = self.loss_state_fn(pred_state.view(B, -1), target_state_idx)
                         else:
-                            state_loss = self.loss_state_fn(state_preds, states.float())
+                            state_loss = self.loss_state_fn(pred_state, target_state)
 
-                        # Reward Loss (usually MSE)
-                        reward_loss = self.loss_fn(return_preds, returns_to_go)
+                        reward_loss = self.loss_fn(pred_return, target_return)
 
-                        # Make each a scalar
                         act_loss_ = act_loss.mean()
                         state_loss_ = state_loss.mean()
                         reward_loss_ = reward_loss.mean()
 
-                    # ---------------------------
-                    # 4) Update running averages (no grad)
-                    # ---------------------------
-                    with torch.no_grad():
+                        # Normalize with running averages
                         running_act_loss = alpha * running_act_loss + (1 - alpha) * act_loss_.item()
                         running_state_loss = alpha * running_state_loss + (1 - alpha) * state_loss_.item()
                         running_return_loss = alpha * running_return_loss + (1 - alpha) * reward_loss_.item()
 
-                    # ---------------------------
-                    # 5) Normalize partial losses by their running averages
-                    # ---------------------------
-                    act_loss_norm = act_loss_ / (running_act_loss + 1e-8)
-                    state_loss_norm = state_loss_ / (running_state_loss + 1e-8)
-                    return_loss_norm = reward_loss_ / (running_return_loss + 1e-8)
+                        act_loss_norm = act_loss_ / (running_act_loss + 1e-8)
+                        state_loss_norm = state_loss_ / (running_state_loss + 1e-8)
+                        return_loss_norm = reward_loss_ / (running_return_loss + 1e-8)
 
-                    # Final combined loss
-                    final_loss = act_loss_norm + state_loss_norm + return_loss_norm
+                        step_loss = act_loss_norm + state_loss_norm + return_loss_norm
 
-                    # Backprop with AMP
-                    self.scaler.scale(final_loss).backward()
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.hyperparams.max_grad_norm)
+                    if self.scaler:
+                        self.scaler.scale(step_loss).backward()
+                    else:
+                        step_loss.backward()
+
+                    total_act_loss += act_loss_.item()
+                    total_state_loss += state_loss_.item()
+                    total_reward_loss += reward_loss_.item()
+                    total_loss += step_loss.item()
+
+                    #print(f"[t={t}] stacked shape = {4 * t}, attention_mask = {input_attention_mask.shape[1]}")
+                    self.global_step += 1
+
+                #print("Batch Losses: Act: {:.4f}, State: {:.4f}, Return: {:.4f}".format())
+
+                # Gradient step after the full sequence
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.hyperparams.max_grad_norm)
+
+                if self.scaler:
                     self.scaler.step(self.optimizer)
                     self.scaler.update()
-
-                    loss_val = final_loss.item()
-
                 else:
-                    # ---------------------------
-                    # 2) No mixed precision
-                    # ---------------------------
-                    state_preds, action_preds, return_preds = self.model(
-                        states,
-                        actions,
-                        rewards=None,
-                        returns_to_go=returns_to_go,
-                        timesteps=timesteps,
-                        config=configs
-                    )
-
-                    # Action Loss
-                    if self.hyperparams.actionType != "continious":
-                        actions_idx = actions.argmax(dim=-1)
-                        act_loss = self.loss_act_fn(
-                            action_preds.view(-1, self.model.act_dim),
-                            actions_idx.view(-1)
-                        )
-                    else:
-                        act_loss = self.loss_act_fn(action_preds, actions.float())
-
-                    # State Loss
-                    if self.hyperparams.stateType != "continious":
-                        states_idx = states.argmax(dim=-1)
-                        state_loss = self.loss_act_fn(
-                            state_preds.view(-1, self.model.state_dim),
-                            states_idx.view(-1)
-                        )
-                    else:
-                        state_loss = self.loss_state_fn(state_preds, states.float())
-
-                    # Reward Loss
-                    reward_loss = self.loss_fn(return_preds, returns_to_go)
-
-                    act_loss_ = act_loss.mean()
-                    state_loss_ = state_loss.mean()
-                    reward_loss_ = reward_loss.mean()
-
-                    # ---------------------------
-                    # 4) Update running averages
-                    # ---------------------------
-                    with torch.no_grad():
-                        running_act_loss = alpha * running_act_loss + (1 - alpha) * act_loss_.item()
-                        running_state_loss = alpha * running_state_loss + (1 - alpha) * state_loss_.item()
-                        running_return_loss = alpha * running_return_loss + (1 - alpha) * reward_loss_.item()
-
-                    # ---------------------------
-                    # 5) Normalize partial losses
-                    # ---------------------------
-                    act_loss_norm = act_loss_ / (running_act_loss + 1e-8)
-                    state_loss_norm = state_loss_ / (running_state_loss + 1e-8)
-                    return_loss_norm = reward_loss_ / (running_return_loss + 1e-8)
-
-                    final_loss = act_loss_norm + state_loss_norm + return_loss_norm
-
-                    # Backprop
-                    final_loss.backward()
-                    torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.hyperparams.max_grad_norm)
                     self.optimizer.step()
 
-                    loss_val = final_loss.item()
+                self.scheduler.step()
+
+                avg_loss = total_loss / (T - 1)
+                progress_bar.set_postfix(loss=f"{avg_loss:.6f}")
+
+                if (epoch * len(self.data_loader) + self.global_step) % self.hyperparams.log_interval == 0:
+                    print(f"[Step {self.global_step}] Avg Loss: {avg_loss:.6f} | Act: {total_act_loss / (T - 1):.4f}, "
+                        f"State: {total_state_loss / (T - 1):.4f}, Return: {total_reward_loss / (T - 1):.4f}")
 
                 # Step the scheduler
                 self.scheduler.step()
 
-                epoch_loss += loss_val
-                progress_bar.set_postfix(loss=f"{loss_val:.6f}")
+                epoch_loss += avg_loss
+                progress_bar.set_postfix(loss=f"{avg_loss:.6f}")
 
             print(f"Epoch {epoch+1}/{self.hyperparams.epochs}, Loss: {epoch_loss / len(self.data_loader):.6f}")
-
+            self.save_model(f"emt_model_epoch_{epoch+1}.pth")
 
 
     def save_model(self, path="emt_model.pth"):
