@@ -1,0 +1,126 @@
+/* Basic Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    background-color: #f4f4f4;
+    color: #333;
+  }
+  
+  /* Container */
+  .container {
+    width: 90%;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  
+  /* Header Styling */
+  header {
+    background-color: #002E5D;
+    color: #fff;
+    padding: 1.5rem 0;
+  }
+  
+  header h1 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  header p {
+    font-size: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  /* Navigation Menu */
+  nav ul {
+    list-style: none;
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  nav ul li {
+    margin: 0 1rem;
+  }
+  
+  nav ul li a {
+    color: #fff;
+    text-decoration: none;
+    font-weight: bold;
+    transition: color 0.3s ease-in-out;
+  }
+  
+  nav ul li a:hover {
+    color: #FFD700;
+  }
+  
+  /* Main Sections */
+  main {
+    padding: 2rem 0;
+  }
+  
+  section {
+    background: #fff;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    border-radius: 5px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+  }
+  
+  section h2 {
+    margin-bottom: 1rem;
+    color: #002E5D;
+    border-bottom: 2px solid #eee;
+    padding-bottom: 0.5rem;
+  }
+  
+  /* Images & Videos */
+  img, video {
+    width: 100%;
+    border-radius: 5px;
+    margin: 1rem 0;
+  }
+  
+  /* Section Specific Styling */
+  .results-images {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .results-video video {
+    max-width: 100%;
+    display: block;
+    margin: 0 auto;
+  }
+  
+  /* Source Code Section */
+  .repo-link {
+    display: inline-block;
+    margin-top: 1rem;
+    background: #002E5D;
+    color: #fff;
+    padding: 0.75rem 1.5rem;
+    text-decoration: none;
+    border-radius: 3px;
+    transition: background-color 0.3s ease;
+  }
+  
+  .repo-link:hover {
+    background: #001C3D;
+  }
+  
+  /* Footer */
+  footer {
+    background-color: #002E5D;
+    color: #fff;
+    text-align: center;
+    padding: 1rem 0;
+  }
+  

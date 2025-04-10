@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Speedy Navigation in Closed Non-Static Environments</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="container">
+      <h1>Speedy Navigation in Closed Non-Static Environments</h1>
+      <p>by [Your Name/Team] at Northeastern University</p>
+      <nav>
+        <ul>
+          <li><a href="#abstract">Abstract</a></li>
+          <li><a href="#importance">Importance</a></li>
+          <li><a href="#architecture">Architecture</a></li>
+          <li><a href="#results">Results</a></li>
+          <li><a href="#code">Code</a></li>
+        </ul>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="abstract">
+      <h2>Abstract</h2>
+      <p>
+        Our project addresses the challenge of navigating dynamic and complex indoor environments efficiently using a robot with limited sensory inputs. We utilize semantic representations and depth images in a partially observable Markov decision process (POMDP) framework and leverage image encoders and domain-randomized policies to enable fast, robust behavior.
+      </p>
+    </section>
+
+    <section id="importance">
+      <h2>Why This Work Matters</h2>
+      <p>
+        Traditional navigation algorithms can struggle in rapidly changing environments. Our approach adapts to unseen layouts and varying physics, ensuring reliable performance in real-world human–robot interaction scenarios.
+      </p>
+    </section>
+
+    <section id="architecture">
+      <h2>Model Architecture</h2>
+      <img src="assets/images/model_architecture.png" alt="Model Architecture Diagram" />
+      <p>
+        We employ a U-Net-based encoder to fuse depth and RGB inputs followed by a decision transformer to autoregressively model action sequences. The architecture enhances visual consistency and supports SO(3)-equivariant reasoning for improved performance.
+      </p>
+    </section>
+
+    <section id="results">
+      <h2>Results</h2>
+      <div class="results-images">
+        <img src="assets/graphs/reward_curve.png" alt="Training Reward Curve" />
+        <img src="assets/graphs/generalization_test.png" alt="Generalization Test Results" />
+      </div>
+      <div class="results-video">
+        <video controls>
+          <source src="assets/videos/demo_episode.mp4" type="video/mp4">
+          Your browser does not support the video tag.
+        </video>
+        <p>Watch the robot navigate in real-time, adapting to changing environments.</p>
+      </div>
+    </section>
+
+    <section id="code">
+      <h2>Source Code</h2>
+      <p>Explore our entire codebase, training scripts, and detailed experiments in this repository. Feel free to dive in and experiment.</p>
+      <a class="repo-link" href="https://github.com/your-username/your-repo" target="_blank">Visit our GitHub Repository</a>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>© 2025 [Your Name or Team]. All rights reserved.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
