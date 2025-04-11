@@ -3,14 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Speedy Navigation in Closed Non-Static Environments</title>
+  <title>Learning Domain-Adaptive Manipulation Sequences with
+    Environment Models and Decision Transformers</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header>
     <div class="container">
-      <h1>Speedy Navigation in Closed Non-Static Environments</h1>
-      <p>by [Your Name/Team] at Northeastern University</p>
+      <h1>Learning Domain-Adaptive Manipulation Sequences with
+        Environment Models and Decision Transformers</h1>
+      <p>by Ashwin Ravindra Bharadwaj at Northeastern University</p>
       <nav>
         <ul>
           <li><a href="#abstract">Abstract</a></li>
@@ -27,14 +29,23 @@
     <section id="abstract">
       <h2>Abstract</h2>
       <p>
-        Our project addresses the challenge of navigating dynamic and complex indoor environments efficiently using a robot with limited sensory inputs. We utilize semantic representations and depth images in a partially observable Markov decision process (POMDP) framework and leverage image encoders and domain-randomized policies to enable fast, robust behavior.
+        We propose a novel approach for solving goal-conditioned manipulation tasks by leveraging a domain-
+adaptive Decision Transformer. Our model predicts sequences of actions that transition an environment
+from an initial to a final state, conditioned on both visual and semantic features. We train this system
+using synthetic data generated via domain-randomized physics environments and test its generalization
+on new unseen settings. Experimental results demonstrate strong performance across multiple domain
+shifts.
       </p>
     </section>
 
     <section id="importance">
       <h2>Why This Work Matters</h2>
       <p>
-        Traditional navigation algorithms can struggle in rapidly changing environments. Our approach adapts to unseen layouts and varying physics, ensuring reliable performance in real-world human–robot interaction scenarios.
+        Robotic manipulation in dynamic and varied environments remains a key challenge in embodied AI. While
+recent progress in transformers and representation learning has enabled long-horizon planning, most models
+fail under domain shift due to rigid assumptions about the environment’s structure. In this work, we
+propose a domain-adaptive Decision Transformer trained on procedurally generated manipulation data and
+demonstrate its robustness across variations in physics, friction, gravity, and object composition.
       </p>
     </section>
 
@@ -42,7 +53,9 @@
       <h2>Model Architecture</h2>
       <img src="assets/images/model_architecture.png" alt="Model Architecture Diagram" />
       <p>
-        We employ a U-Net-based encoder to fuse depth and RGB inputs followed by a decision transformer to autoregressively model action sequences. The architecture enhances visual consistency and supports SO(3)-equivariant reasoning for improved performance.
+        he model processes these sequences autoregressively, predicting future actions, states, and returns-to-
+go. We introduce normalization layers between transformer blocks to stabilize training across modalities,
+following strategies shown effective in multi-modal transformer architectures.
       </p>
     </section>
 
